@@ -10,6 +10,8 @@ endif
 
 default: writer
 
+all: writer
+
 writer.o: writer.c 
 	$(CC) -c writer.c -o writer.o
 
