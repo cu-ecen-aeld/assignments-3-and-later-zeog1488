@@ -1,14 +1,16 @@
-CC=$(CROSS_COMPILE)gcc
+CC?=$(CROSS_COMPILE)gcc
+CFLAGS?=-g -Wall -Werror
+LDFLAGS?=-pthread
 
 default: aesdsocket
 
 all: aesdsocket
 
 aesdsocket.o: aesdsocket.c 
-	$(CC) -pthread -c aesdsocket.c -o aesdsocket.o -Wall -Werror -g
+	$(CC) $(LDFLAGS) -c aesdsocket.c -o aesdsocket.o $(CFLAGS)
 
 aesdsocket: aesdsocket.o
-	$(CC) -pthread aesdsocket.o -o aesdsocket -Wall -Werror -g
+	$(CC) $(LDFLAGS) aesdsocket.o -o aesdsocket $(CFLAGS)
 
 .PHONY: clean
 
