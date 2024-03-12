@@ -401,7 +401,7 @@ int main(int argc, char *argv[])
         conn_fd = accept(socket_fd, (struct sockaddr *)&client, &client_size);
         if (conn_fd == -1)
         {
-            if (errno == EAGAIN || errno || EWOULDBLOCK)
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
             {
                 continue;
             }
