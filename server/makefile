@@ -4,7 +4,7 @@ LDFLAGS?=-lpthread -lrt
 
 default: aesdsocket
 
-all: aesdsocket
+all: clean aesdsocket
 
 aesdsocket.o: aesdsocket.c 
 	$(CC) -c aesdsocket.c  $(LDFLAGS) -o aesdsocket.o $(CFLAGS)
