@@ -203,8 +203,8 @@ void *process_connection(void *thread_func_data)
         temp = sendBuf;
         pthread_mutex_lock(&mutex);
         fd = fopen(LOG_FILE, "r+");
-        len_read = fread(temp, len, 1, fd);
-        if (len_read != 1)
+        len_read = fread(temp, 1, len, fd);
+        if (len_read != len - 2)
         {
             perror("read");
             printf("File read failure\n");
@@ -217,7 +217,7 @@ void *process_connection(void *thread_func_data)
         pthread_mutex_unlock(&mutex);
 
         temp = sendBuf;
-        len = fsize;
+        len = len_read;
 
         while (len != 0 && (len_write = write(thread_data->m_conn_fd, temp, len)) != 0)
         {

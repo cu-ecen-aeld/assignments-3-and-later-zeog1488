@@ -207,6 +207,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             memset(dev->working_buffer + (dev->wb_len - entry_len), 0, dev->wb_len - entry_len);
             dev->wb_len -= entry_len;
             offset = dev->wb_len - 1;
+            filp->f_pos += entry_len;
         }
     } while (newline);
 
