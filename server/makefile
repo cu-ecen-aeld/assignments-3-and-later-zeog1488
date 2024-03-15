@@ -1,5 +1,6 @@
 CC?=$(CROSS_COMPILE)gcc
-CFLAGS?=-g -Wall -Werror -DUSE_AESD_CHAR_DEVICE=1
+CFLAGS?=-g -Wall -Werror
+CFLAGS+=-DUSE_AESD_CHAR_DEVICE=1
 LDFLAGS?=-lpthread -lrt
 
 default: aesdsocket
