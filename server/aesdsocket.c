@@ -206,7 +206,7 @@ void *process_connection(void *thread_func_data)
         len_read = fread(temp, 1, len, fd);
         if (len_read != len - 2)
         {
-            printf("len_read: %l, len: %i\n", len_read, len);
+            printf("len_read: %ld, len: %i\n", len_read, len);
             perror("read");
             printf("File read failure\n");
             thread_cleanup(buffer, sendBuf);
