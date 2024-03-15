@@ -204,9 +204,8 @@ void *process_connection(void *thread_func_data)
         pthread_mutex_lock(&mutex);
         fd = fopen(LOG_FILE, "r+");
         len_read = fread(temp, 1, len, fd);
-        if (len_read != len - 2)
+        if (len_read >= len || len_read <= 0)
         {
-            printf("len_read: %ld, len: %i\n", len_read, len);
             perror("read");
             printf("File read failure\n");
             thread_cleanup(buffer, sendBuf);
