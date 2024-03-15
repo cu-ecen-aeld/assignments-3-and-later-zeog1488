@@ -119,6 +119,8 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     }
     *f_pos += bytes_to_write;
 
+    kfree(temp_buf);
+
     mutex_unlock(&dev->mutex);
 
     retval = bytes_to_write;
