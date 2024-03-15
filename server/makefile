@@ -1,6 +1,5 @@
 CC?=$(CROSS_COMPILE)gcc
 CFLAGS?=-g -Wall -Werror
-CFLAGS+=-DUSE_AESD_CHAR_DEVICE=1
 LDFLAGS?=-lpthread -lrt
 
 default: aesdsocket
@@ -8,10 +7,10 @@ default: aesdsocket
 all: clean aesdsocket
 
 aesdsocket.o: aesdsocket.c 
-	$(CC) -c aesdsocket.c  $(LDFLAGS) -o aesdsocket.o $(CFLAGS)
+	$(CC) -c aesdsocket.c  $(LDFLAGS) -o aesdsocket.o -DUSE_AESD_CHAR_DEVICE=1 $(CFLAGS)
 
 aesdsocket: aesdsocket.o
-	$(CC) aesdsocket.o $(LDFLAGS) -o aesdsocket $(CFLAGS)
+	$(CC) aesdsocket.o $(LDFLAGS) -o aesdsocket -DUSE_AESD_CHAR_DEVICE=1 $(CFLAGS)
 
 .PHONY: clean
 
