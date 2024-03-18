@@ -35,7 +35,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
         return NULL;
     }
 
-    int curr_entry = buffer->out_offs;
+    uint8_t curr_entry = buffer->out_offs;
     size_t entry_len;
     do
     {
@@ -114,8 +114,6 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
             buffer->out_offs = 0;
         }
     }
-    printf("new out ptr: %u\n", buffer->out_offs);
-    printf("first out: %s", buffer->entry[buffer->out_offs].buffptr);
     return;
 }
 

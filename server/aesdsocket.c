@@ -16,6 +16,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include "queue.h"
+#include <sys/stat.h>
 
 #define PORT 9000
 #define START_LEN 128
@@ -39,10 +40,19 @@ struct slist_data_s
     entries;
 };
 
-int socket_fd, fd;
+int socket_fd;
 volatile sig_atomic_t exitRequested = 0;
+#if USE_AESD_CHAR_DEVICE == 0
+volatile sig_atomic_t timestampRequested = 0;
+#endif
 bool test = false;
 pthread_mutex_t mutex;
+
+#if USE_AESD_CHAR_DEVICE == 0
+#define LOG_FILE "/var/tmp/aesdsocketdata"
+#else
+#define LOG_FILE "/dev/aesdchar"
+#endif
 
 void thread_cleanup(char *buffer, char *sendBuf)
 {
@@ -67,6 +77,8 @@ void *process_connection(void *thread_func_data)
     char *temp = NULL;
     off_t fsize;
 
+    FILE *fd;
+
     while (1)
     {
         buflen = START_LEN;
@@ -83,7 +95,7 @@ void *process_connection(void *thread_func_data)
         memset(buffer, 0, buflen);
         do
         {
-            pthread_mutex_lock(thread_data->m_mutex_exit);
+            // pthread_mutex_lock(thread_data->m_mutex_exit);
             if (thread_data->m_exit_requested)
             {
                 thread_cleanup(buffer, sendBuf);
@@ -91,7 +103,7 @@ void *process_connection(void *thread_func_data)
                 pthread_mutex_unlock(thread_data->m_mutex_exit);
                 return thread_data;
             }
-            pthread_mutex_unlock(thread_data->m_mutex_exit);
+            // pthread_mutex_unlock(thread_data->m_mutex_exit);
 
             len_recv = recv(thread_data->m_conn_fd, buffer + pos, buflen - pos - 1, 0);
             if (len_recv == -1)
@@ -135,7 +147,17 @@ void *process_connection(void *thread_func_data)
         } while (strchr(buffer, '\n') == NULL);
 
         pthread_mutex_lock(&mutex);
-        len_write = write(fd, buffer, strlen(buffer));
+        fd = fopen(LOG_FILE, "a+");
+        if (!fd)
+        {
+            perror("fopen");
+            thread_cleanup(buffer, sendBuf);
+            thread_data->m_thread_complete = true;
+            return thread_data;
+        }
+        len_write = fwrite(buffer, strlen(buffer), 1, fd);
+        fclose(fd);
+        pthread_mutex_unlock(&mutex);
         if (len_write == -1)
         {
             perror("write");
@@ -144,7 +166,7 @@ void *process_connection(void *thread_func_data)
             thread_data->m_thread_complete = true;
             return thread_data;
         }
-        else if (len_write != strlen(buffer))
+        else if (len_write != 1)
         {
             perror("write");
             printf("Partial write occurred\n");
@@ -152,20 +174,20 @@ void *process_connection(void *thread_func_data)
             thread_data->m_thread_complete = true;
             return thread_data;
         }
-        pthread_mutex_unlock(&mutex);
 
-        if (fdatasync(fd) == -1)
+        pthread_mutex_lock(&mutex);
+        int fp = open(LOG_FILE, O_RDWR);
+        fsize = lseek(fp, 0, SEEK_END);
+        if (fsize == -1)
         {
-            perror("fdatasync");
-            printf("fdatasync failed\n");
+            perror("lseek");
             thread_cleanup(buffer, sendBuf);
             thread_data->m_thread_complete = true;
             return thread_data;
         }
-
-        fsize = lseek(fd, 0, SEEK_END);
-        lseek(fd, 0, SEEK_SET);
-
+        lseek(fp, 0, SEEK_SET);
+        close(fp);
+        pthread_mutex_unlock(&mutex);
         len = fsize;
 
         sendBuf = (char *)malloc(sizeof(char) * (len + 1));
@@ -179,25 +201,23 @@ void *process_connection(void *thread_func_data)
         }
 
         temp = sendBuf;
-
-        while (len != 0 && (len_read = read(fd, temp, len)) != 0)
+        pthread_mutex_lock(&mutex);
+        fd = fopen(LOG_FILE, "r+");
+        len_read = fread(temp, 1, len, fd);
+        if (len_read <= 0)
         {
-            if (len_read == -1)
-            {
-                if (errno == EINTR)
-                    continue;
-                perror("read");
-                printf("File read failure\n");
-                thread_cleanup(buffer, sendBuf);
-                thread_data->m_thread_complete = true;
-                return thread_data;
-            }
-            len -= len_read;
-            temp += len_read;
+            perror("read");
+            printf("File read failure\n");
+            thread_cleanup(buffer, sendBuf);
+            thread_data->m_thread_complete = true;
+            return thread_data;
         }
 
+        fclose(fd);
+        pthread_mutex_unlock(&mutex);
+
         temp = sendBuf;
-        len = fsize;
+        len = len_read;
 
         while (len != 0 && (len_write = write(thread_data->m_conn_fd, temp, len)) != 0)
         {
@@ -223,11 +243,9 @@ void cleanup()
     {
         close(socket_fd);
     }
-    if (fd != -1)
-    {
-        close(fd);
-    }
+#if USE_AESD_CHAR_DEVICE == 0
     remove("/var/tmp/aesdsocketdata");
+#endif
     closelog();
 }
 
@@ -236,25 +254,12 @@ static void sigint_handler(int signo)
     syslog(LOG_DEBUG, "Caught signal, exiting");
     exitRequested = 1;
 }
-
+#if USE_AESD_CHAR_DEVICE == 0
 void append_timestamp(int signo)
 {
-    time_t t;
-    struct tm *wallTime;
-    char time_str[16];
-    char str[] = "timestamp:";
-    memset(time_str, 0, sizeof(time_str));
-
-    t = time(NULL);
-    wallTime = localtime(&t);
-    strftime(time_str, sizeof(time_str), "%Y%m%d%H%M%S", wallTime);
-    time_str[14] = '\n';
-    pthread_mutex_lock(&mutex);
-    write(fd, str, strlen(str));
-    write(fd, time_str, strlen(time_str));
-    pthread_mutex_unlock(&mutex);
+    timestampRequested = 1;
 }
-
+#endif
 int main(int argc, char *argv[])
 {
     int conn_fd;
@@ -267,14 +272,24 @@ int main(int argc, char *argv[])
     slist_data_t *datap = NULL;
     slist_data_t *datap_temp = NULL;
     socket_thread_data_t *thread_data = NULL;
+
     struct timeval ts;
     ts.tv_sec = 0;
     ts.tv_usec = 50000;
+
+#if USE_AESD_CHAR_DEVICE == 0
+    FILE *fd;
     struct itimerval delay;
     delay.it_value.tv_sec = 0;
     delay.it_value.tv_usec = 1;
     delay.it_interval.tv_sec = 10;
     delay.it_interval.tv_usec = 0;
+
+    time_t t;
+    struct tm *wallTime;
+    char time_str[16];
+    char str[] = "timestamp:";
+#endif
     pthread_mutex_init(&mutex, NULL);
 
     SLIST_HEAD(slisthead, slist_data_s)
@@ -371,6 +386,7 @@ int main(int argc, char *argv[])
             exit(EXIT_SUCCESS);
         }
     }
+#if USE_AESD_CHAR_DEVICE == 0
     if (signal(SIGALRM, append_timestamp) == SIG_ERR)
     {
         perror("signal");
@@ -385,6 +401,7 @@ int main(int argc, char *argv[])
         cleanup();
         exit(-1);
     }
+#endif
     if ((listen(socket_fd, 10)) != 0)
     {
         perror("listen");
@@ -394,10 +411,25 @@ int main(int argc, char *argv[])
     }
 
     client_size = sizeof(client);
-
-    fd = open("/var/tmp/aesdsocketdata", O_RDWR | O_CREAT | O_APPEND, 0644);
     while (exitRequested == 0)
     {
+#if USE_AESD_CHAR_DEVICE == 0
+        if (timestampRequested)
+        {
+            memset(time_str, 0, sizeof(time_str));
+            t = time(NULL);
+            wallTime = localtime(&t);
+            strftime(time_str, sizeof(time_str), "%Y%m%d%H%M%S", wallTime);
+            time_str[14] = '\n';
+            pthread_mutex_lock(&mutex);
+            fd = fopen(LOG_FILE, "a+");
+            fwrite(str, strlen(str), 1, fd);
+            fwrite(time_str, strlen(time_str), 1, fd);
+            fclose(fd);
+            pthread_mutex_unlock(&mutex);
+            timestampRequested = 0;
+        }
+#endif
         conn_fd = accept(socket_fd, (struct sockaddr *)&client, &client_size);
         if (conn_fd == -1)
         {
