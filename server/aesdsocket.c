@@ -17,6 +17,8 @@
 #include <time.h>
 #include "queue.h"
 #include <sys/stat.h>
+#include "aesd_ioctl.h"
+#include <sys/ioctl.h>
 
 #define PORT 9000
 #define START_LEN 128
@@ -45,8 +47,8 @@ volatile sig_atomic_t exitRequested = 0;
 #if USE_AESD_CHAR_DEVICE == 0
 volatile sig_atomic_t timestampRequested = 0;
 #endif
-bool test = false;
 pthread_mutex_t mutex;
+const char ioctl_str[] = "AESDCHAR_IOCSEEKTO:";
 
 #if USE_AESD_CHAR_DEVICE == 0
 #define LOG_FILE "/var/tmp/aesdsocketdata"
@@ -73,9 +75,12 @@ void *process_connection(void *thread_func_data)
     char *buffer = NULL;
     char *sendBuf = NULL;
     ssize_t len_recv, len_write, len_read;
-    int len, buflen, pos;
+    int len, buflen, pos, result, fp;
     char *temp = NULL;
-    off_t fsize;
+    char *temp_str = NULL;
+    struct aesd_seekto seekto;
+    off_t fsize, offset;
+    bool use_seekto = false;
 
     FILE *fd;
 
@@ -151,43 +156,88 @@ void *process_connection(void *thread_func_data)
         if (!fd)
         {
             perror("fopen");
+            pthread_mutex_unlock(&mutex);
             thread_cleanup(buffer, sendBuf);
             thread_data->m_thread_complete = true;
             return thread_data;
         }
-        len_write = fwrite(buffer, strlen(buffer), 1, fd);
-        fclose(fd);
-        pthread_mutex_unlock(&mutex);
-        if (len_write == -1)
+#if USE_AESD_CHAR_DEVICE == 1
+        if (memcmp(buffer, ioctl_str, strlen(ioctl_str)) == 0)
         {
-            perror("write");
-            printf("Write failed\n");
-            thread_cleanup(buffer, sendBuf);
-            thread_data->m_thread_complete = true;
-            return thread_data;
-        }
-        else if (len_write != 1)
-        {
-            perror("write");
-            printf("Partial write occurred\n");
-            thread_cleanup(buffer, sendBuf);
-            thread_data->m_thread_complete = true;
-            return thread_data;
-        }
+            use_seekto = true;
+            temp_str = buffer += strlen(ioctl_str);
+            seekto.write_cmd = atoi(temp_str);
+            temp_str = strchr(temp_str, ',');
+            if (!temp_str)
+            {
+                printf("Incorrect AESDCHAR_IOCSEEKTO format\n");
+                fclose(fd);
+                pthread_mutex_unlock(&mutex);
+                thread_cleanup(buffer, sendBuf);
+                thread_data->m_thread_complete = true;
+                return thread_data;
+            }
+            temp_str++;
+            seekto.write_cmd_offset = atoi(temp_str);
 
-        pthread_mutex_lock(&mutex);
-        int fp = open(LOG_FILE, O_RDWR);
+            result = ioctl(fileno(fd), AESDCHAR_IOCSEEKTO, &seekto);
+            if (result != 0)
+            {
+                perror("ioctl");
+                fclose(fd);
+                pthread_mutex_unlock(&mutex);
+                thread_cleanup(buffer, sendBuf);
+                thread_data->m_thread_complete = true;
+                return thread_data;
+            }
+        }
+        else
+        {
+#endif
+            len_write = fwrite(buffer, strlen(buffer), 1, fd);
+            if (len_write == -1)
+            {
+                perror("write");
+                printf("Write failed\n");
+                thread_cleanup(buffer, sendBuf);
+                thread_data->m_thread_complete = true;
+                return thread_data;
+            }
+            else if (len_write != 1)
+            {
+                perror("write");
+                printf("Partial write occurred\n");
+                thread_cleanup(buffer, sendBuf);
+                thread_data->m_thread_complete = true;
+                return thread_data;
+            }
+#if USE_AESD_CHAR_DEVICE == 1
+        }
+#endif
+        fp = fileno(fd);
+        fsync(fp);
+        if (use_seekto)
+        {
+            offset = lseek(fp, 0, SEEK_CUR);
+        }
+        else
+        {
+            offset = 0;
+        }
         fsize = lseek(fp, 0, SEEK_END);
         if (fsize == -1)
         {
             perror("lseek");
+            fclose(fd);
+            pthread_mutex_unlock(&mutex);
             thread_cleanup(buffer, sendBuf);
             thread_data->m_thread_complete = true;
             return thread_data;
         }
-        lseek(fp, 0, SEEK_SET);
-        close(fp);
-        pthread_mutex_unlock(&mutex);
+#if USE_AESD_CHAR_DEVICE == 1
+        fsize += strlen(buffer);
+#endif
+        lseek(fp, offset, SEEK_SET);
         len = fsize;
 
         sendBuf = (char *)malloc(sizeof(char) * (len + 1));
@@ -195,19 +245,21 @@ void *process_connection(void *thread_func_data)
         {
             perror("malloc");
             printf("sendBuf malloc failed\n");
+            fclose(fd);
+            pthread_mutex_unlock(&mutex);
             thread_cleanup(buffer, sendBuf);
             thread_data->m_thread_complete = true;
             return thread_data;
         }
 
         temp = sendBuf;
-        pthread_mutex_lock(&mutex);
-        fd = fopen(LOG_FILE, "r+");
         len_read = fread(temp, 1, len, fd);
-        if (len_read <= 0)
+        if (len_read < 0)
         {
             perror("read");
             printf("File read failure\n");
+            fclose(fd);
+            pthread_mutex_unlock(&mutex);
             thread_cleanup(buffer, sendBuf);
             thread_data->m_thread_complete = true;
             return thread_data;

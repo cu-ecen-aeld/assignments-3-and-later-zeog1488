@@ -7,10 +7,10 @@ default: aesdsocket
 all: clean aesdsocket
 
 aesdsocket.o: aesdsocket.c 
-	$(CC) -c aesdsocket.c  $(LDFLAGS) -o aesdsocket.o -DUSE_AESD_CHAR_DEVICE=1 $(CFLAGS)
+	$(CC) -c aesdsocket.c  $(LDFLAGS) -o aesdsocket.o -DUSE_AESD_CHAR_DEVICE=1 $(CFLAGS) -I../aesd-char-driver
 
 aesdsocket: aesdsocket.o
-	$(CC) aesdsocket.o $(LDFLAGS) -o aesdsocket -DUSE_AESD_CHAR_DEVICE=1 $(CFLAGS)
+	$(CC) aesdsocket.o $(LDFLAGS) -o aesdsocket -DUSE_AESD_CHAR_DEVICE=1 $(CFLAGS) -I../aesd-char-driver
 
 .PHONY: clean
 
